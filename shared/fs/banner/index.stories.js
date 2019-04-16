@@ -4,6 +4,7 @@ import * as Types from '../../constants/types/fs'
 import * as Constants from '../../constants/fs'
 import * as Sb from '../../stories/storybook'
 import ResetBanner from './reset-banner'
+import OutOfSpaceBanner from './out-of-space-banner'
 import SystemFileManagerIntegrationBanner from './system-file-manager-integration-banner'
 import KextPermissionPopup from './system-file-manager-integration-banner/kext-permission-popup'
 import {commonProvider} from '../common/index.stories'
@@ -102,4 +103,5 @@ export default () => {
         openSecurityPrefs={Sb.action('openSecurityPrefs')}
       />
     ))
+    .add('Out of space banner', () => <OutOfSpaceBanner onRetry={Sb.action('retry')} />)
 }
