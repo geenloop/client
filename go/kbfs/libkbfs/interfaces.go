@@ -115,6 +115,10 @@ type clockGetter interface {
 	Clock() Clock
 }
 
+type reporterGetter interface {
+	Reporter() Reporter
+}
+
 type diskLimiterGetter interface {
 	DiskLimiter() DiskLimiter
 }
@@ -1917,8 +1921,8 @@ type Config interface {
 	SetKBPKI(KBPKI)
 	KeyManager() KeyManager
 	SetKeyManager(KeyManager)
-	Reporter() Reporter
 	SetReporter(Reporter)
+	reporterGetter
 	MDCache() MDCache
 	SetMDCache(MDCache)
 	KeyCache() KeyCache
