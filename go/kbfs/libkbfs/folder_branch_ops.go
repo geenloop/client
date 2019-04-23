@@ -842,6 +842,9 @@ func (fbo *folderBranchOps) startMonitorChat(tlfName tlf.CanonicalName) {
 	})
 }
 
+var errNeedMDForPartialSyncConfig = errors.New(
+	"needs MD for partial sync config")
+
 func (fbo *folderBranchOps) getProtocolSyncConfig(
 	ctx context.Context, lState *kbfssync.LockState, kmd libkey.KeyMetadata) (
 	ret keybase1.FolderSyncConfig, tlfPath string, err error) {
@@ -851,6 +854,10 @@ func (fbo *folderBranchOps) getProtocolSyncConfig(
 	ret.Mode = config.Mode
 	if ret.Mode != keybase1.FolderSyncMode_PARTIAL {
 		return ret, config.TlfPath, nil
+	}
+
+	if kmd.TlfID() == tlf.NullID {
+		return keybase1.FolderSyncConfig{}, "", errNeedMDForPartialSyncConfig
 	}
 
 	var block *data.FileBlock
@@ -1462,7 +1469,7 @@ func (fbo *folderBranchOps) partialMarkAndSweepLoop(trigger <-chan struct{}) {
 			continue
 		case _, ok := <-trigger:
 			if !ok {
-				fbo.log.CDebugf(ctx, "Mark-and-sweep is shutting down.")
+				fbo.log.CDebugf(ctx, "Mark-and-sweep is shutting down")
 				return
 			}
 			fbo.vlog.CLogf(ctx, libkb.VLog1, "New mark-and-sweep triggered")
@@ -8504,11 +8511,33 @@ func (fbo *folderBranchOps) GetSyncConfig(
 	lState := makeFBOLockState()
 	md, _ := fbo.getHead(ctx, lState, mdNoCommit)
 	config, tlfPath, err := fbo.getProtocolSyncConfigUnlocked(ctx, lState, md)
+	if errors.Cause(err) == errNeedMDForPartialSyncConfig {
+		// This is a partially-synced TLF, so it should be initialized
+		// automatically by KBFSOps; we just need to wait for the MD.
+		var once sync.Once
+		for md == (ImmutableRootMetadata{}) {
+			once.Do(func() {
+				fbo.log.CDebugf(
+					ctx, "Waiting for head to be populated while getting "+
+						"sync config")
+			})
+			t := time.After(100 * time.Millisecond)
+			select {
+			case <-t:
+			case <-ctx.Done():
+				return keybase1.FolderSyncConfig{}, errors.WithStack(ctx.Err())
+			}
+			md, _ = fbo.getHead(ctx, lState, mdNoCommit)
+		}
+		config, tlfPath, err = fbo.getProtocolSyncConfigUnlocked(
+			ctx, lState, md)
+	}
 	if err != nil {
 		return keybase1.FolderSyncConfig{}, err
 	}
 
-	if md == (ImmutableRootMetadata{}) ||
+	if config.Mode == keybase1.FolderSyncMode_DISABLED ||
+		md == (ImmutableRootMetadata{}) ||
 		md.GetTlfHandle().GetCanonicalPath() == tlfPath {
 		return config, nil
 	}
@@ -8714,6 +8743,14 @@ func (fbo *folderBranchOps) SetSyncConfig(
 
 	fbo.log.CDebugf(ctx, "Setting sync config for %s, mode=%s",
 		tlfID, config.Mode)
+
+	if config.Mode == keybase1.FolderSyncMode_PARTIAL &&
+		len(config.Paths) == 0 {
+		fbo.log.CDebugf(ctx,
+			"Converting partial config with no paths into a disabled config")
+		config.Mode = keybase1.FolderSyncMode_DISABLED
+	}
+
 	newConfig := FolderSyncConfig{
 		Mode:    config.Mode,
 		TlfPath: md.GetTlfHandle().GetCanonicalPath(),
@@ -8779,7 +8816,7 @@ func (fbo *folderBranchOps) SetSyncConfig(
 		}
 	}
 
-	ch, err = fbo.config.SetTlfSyncState(tlfID, newConfig)
+	ch, err = fbo.config.SetTlfSyncState(ctx, tlfID, newConfig)
 	if err != nil {
 		return nil, err
 	}

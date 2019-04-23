@@ -331,6 +331,7 @@
     array<MessageID> reactionIDs;
     @mpackkey("u") @jsonkey("u")
     array<MessageID> unfurlIDs;
+    array<MessageID> replies;
     gregor1.Time ctime;
     // server's view of now(), used to calculate ephemeral lifetimes
     @mpackkey("n") @jsonkey("n")
@@ -543,8 +544,7 @@
   enum ReIndexingMode {
     NONE_0,
     PRESEARCH_SYNC_1,
-    POSTSEARCH_ASYNC_2,
-    POSTSEARCH_SYNC_3
+    POSTSEARCH_SYNC_2
   }
 
   record SearchOpts {
