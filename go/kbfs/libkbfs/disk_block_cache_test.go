@@ -556,6 +556,7 @@ func TestDiskBlockCacheWithRetrievalQueue(t *testing.T) {
 		0, 0, 0, newTestBlockRetrievalConfig(t, bg, cache))
 	require.NotNil(t, q)
 	defer q.Shutdown()
+	addFakeWorkerToBlockRetrievalQueue(q)
 
 	ctx := context.Background()
 	kmd := makeKMD()

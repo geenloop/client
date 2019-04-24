@@ -421,7 +421,7 @@ func (brq *blockRetrievalQueue) request(ctx context.Context,
 	brq.vlog.CLogf(ctx, libkb.VLog2,
 		"Request of %v, action=%s, priority=%d", ptr, action, priority)
 
-	// Only continue if we haven't been shut down
+	// Only continue if we haven't been shut down, and we have workers.
 	ch := make(chan error, 1)
 	select {
 	case <-brq.doneCh:
@@ -431,6 +431,10 @@ func (brq *blockRetrievalQueue) request(ctx context.Context,
 		}
 		return ch
 	default:
+	}
+	if len(brq.workers) == 0 {
+		ch <- errors.New("No block workers to handle request")
+		return ch
 	}
 	if block == nil {
 		ch <- errors.New("nil block passed to blockRetrievalQueue.Request")

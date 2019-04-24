@@ -84,10 +84,19 @@ func makeKMD() libkey.KeyMetadata {
 	return libkeytest.NewEmptyKeyMetadata(tlf.FakeID(0, tlf.Private), 1)
 }
 
+func addFakeWorkerToBlockRetrievalQueue(q *blockRetrievalQueue) {
+	// Fake a worker so that `Request()` will put the request on the
+	// queue.  It won't actually be used since it listens on a
+	// different channel.
+	q.workers = append(q.workers, newBlockRetrievalWorker(
+		q.config.blockGetter(), q, NewInfiniteChannelWrapper()))
+}
+
 func initBlockRetrievalQueueTest(t *testing.T) *blockRetrievalQueue {
 	q := newBlockRetrievalQueue(
 		0, 0, 0, newTestBlockRetrievalConfig(t, nil, nil))
 	<-q.TogglePrefetcher(false, nil, nil)
+	addFakeWorkerToBlockRetrievalQueue(q)
 	return q
 }
 

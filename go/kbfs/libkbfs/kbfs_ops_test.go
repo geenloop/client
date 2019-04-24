@@ -142,6 +142,8 @@ func kbfsOpsInit(t *testing.T) (mockCtrl *gomock.Controller,
 		newTestDiskBlockCacheGetter(t, nil), newTestSyncedTlfGetterSetter(),
 		testInitModeGetter{InitDefault}, clocktest.NewTestClockNow()}
 	brq := newBlockRetrievalQueue(0, 0, 0, brc)
+	config.vlogs = append(
+		config.vlogs, brq.vlog, brq.Prefetcher().(*blockPrefetcher).vlog)
 	config.mockBops.EXPECT().BlockRetriever().AnyTimes().Return(brq)
 	config.mockBops.EXPECT().Prefetcher().AnyTimes().Return(brq.prefetcher)
 
@@ -994,7 +996,6 @@ func TestKBFSOpsGetNestedDirChildrenCacheSuccess(t *testing.T) {
 }
 
 func TestKBFSOpsLookupSuccess(t *testing.T) {
-	t.Skip("Broken test since Go 1.12.4 due to extra pending requests after test termination. Panic: unable to shutdown block ops.")
 	mockCtrl, config, ctx, cancel := kbfsOpsInit(t)
 	defer kbfsTestShutdown(t, mockCtrl, config, ctx, cancel)
 
@@ -1098,7 +1099,6 @@ func TestKBFSOpsLookupSymlinkSuccess(t *testing.T) {
 }
 
 func TestKBFSOpsLookupNoSuchNameFail(t *testing.T) {
-	t.Skip("Broken test since Go 1.12.4 due to extra pending requests after test termination. Panic: unable to shutdown block ops.")
 	mockCtrl, config, ctx, cancel := kbfsOpsInit(t)
 	defer kbfsTestShutdown(t, mockCtrl, config, ctx, cancel)
 
@@ -1209,7 +1209,6 @@ func TestKBFSOpsReadNewDataVersionFail(t *testing.T) {
 }
 
 func TestKBFSOpsStatSuccess(t *testing.T) {
-	t.Skip("Broken test since Go 1.12.4 due to extra pending requests after test termination. Panic: unable to shutdown prefetcher.")
 	mockCtrl, config, ctx, cancel := kbfsOpsInit(t)
 	defer kbfsTestShutdown(t, mockCtrl, config, ctx, cancel)
 
@@ -1343,12 +1342,10 @@ func testCreateEntryFailDupName(t *testing.T, isDir bool) {
 }
 
 func TestCreateDirFailDupName(t *testing.T) {
-	t.Skip("Broken test since Go 1.12.4 due to extra pending requests after test termination. Panic: unable to shutdown prefetcher.")
 	testCreateEntryFailDupName(t, true)
 }
 
 func TestCreateLinkFailDupName(t *testing.T) {
-	t.Skip("Broken test since Go 1.12.4 due to extra pending requests after test termination. Panic: unable to shutdown prefetcher.")
 	testCreateEntryFailDupName(t, false)
 }
 
@@ -1879,7 +1876,6 @@ func TestKBFSOpsCacheReadFullMultiBlockSuccess(t *testing.T) {
 }
 
 func TestKBFSOpsCacheReadPartialMultiBlockSuccess(t *testing.T) {
-	t.Skip("Broken test since Go 1.12.4 due to extra pending requests after test termination. Panic: unable to shutdown prefetcher.")
 	mockCtrl, config, ctx, cancel := kbfsOpsInit(t)
 	defer kbfsTestShutdown(t, mockCtrl, config, ctx, cancel)
 
