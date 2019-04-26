@@ -257,8 +257,7 @@ func (s *searchSession) searchHitsFromMsgIDs(ctx context.Context, conv types.Rem
 func (s *searchSession) reindexConvWithUIUpdate(ctx context.Context, convIdx *chat1.ConversationIndex, rconv types.RemoteConversation) error {
 	conv := rconv.Conv
 	percentIndexed := convIdx.PercentIndexed(conv)
-	_, convIdx, err := s.indexer.reindexConv(ctx, rconv, s.uid, convIdx,
-		reindexOpts{forceReindex: true})
+	_, convIdx, err := s.indexer.reindexConv(ctx, rconv, s.uid, convIdx, 0)
 	if err != nil {
 		return err
 	}
@@ -334,7 +333,8 @@ func (s *searchSession) searchDone(ctx context.Context, stage string) bool {
 // preSearch is the first pipeline stage, blocking on reindexing conversations
 // if PRESEARCH_SYNC is set. As conversations are processed they are passed to
 // the `search` stage via `preSearchCh`.
-func (s *searchSession) preSearch(ctx context.Context) error {
+func (s *searchSession) preSearch(ctx context.Context) (err error) {
+	defer s.indexer.Trace(ctx, func() error { return err }, "searchSession.preSearch")()
 	for _, conv := range s.convList {
 		select {
 		case <-ctx.Done():
@@ -378,7 +378,8 @@ func (s *searchSession) preSearch(ctx context.Context) error {
 
 // search performs the actual search on each conversation after it completes
 // preSearch via `preSearchCh`
-func (s *searchSession) search(ctx context.Context) error {
+func (s *searchSession) search(ctx context.Context) (err error) {
+	defer s.indexer.Trace(ctx, func() error { return err }, "searchSession.search")()
 	for _, conv := range s.convList {
 		select {
 		case <-ctx.Done():
@@ -397,7 +398,8 @@ func (s *searchSession) search(ctx context.Context) error {
 
 // postSearch is the final pipeline stage, reindexing conversations if
 // POSTSEARCH_SYNC is set.
-func (s *searchSession) postSearch(ctx context.Context) error {
+func (s *searchSession) postSearch(ctx context.Context) (err error) {
+	defer s.indexer.Trace(ctx, func() error { return err }, "searchSession.postSearch")()
 	switch s.opts.ReindexMode {
 	case chat1.ReIndexingMode_POSTSEARCH_SYNC:
 	default:
@@ -472,9 +474,15 @@ func (s *searchSession) run(ctx context.Context) (res *chat1.ChatSearchInboxResu
 		return nil, err
 	}
 
-	s.preSearch(ctx)
-	s.search(ctx)
-	s.postSearch(ctx)
+	if err := s.preSearch(ctx); err != nil {
+		return nil, err
+	}
+	if err := s.search(ctx); err != nil {
+		return nil, err
+	}
+	if err := s.postSearch(ctx); err != nil {
+		return nil, err
+	}
 
 	s.Lock()
 	defer s.Unlock()

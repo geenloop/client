@@ -398,6 +398,7 @@ func TestChatSearchInbox(t *testing.T) {
 		reindexCh1 := make(chan chat1.ConversationID, 100)
 		indexer1.SetConsumeCh(consumeCh1)
 		indexer1.SetReindexCh(reindexCh1)
+		indexer1.SetStartSyncDelay(0)
 		// Stop the original
 		select {
 		case <-g1.Indexer.Stop(ctx):
@@ -411,6 +412,7 @@ func TestChatSearchInbox(t *testing.T) {
 		reindexCh2 := make(chan chat1.ConversationID, 100)
 		indexer2.SetConsumeCh(consumeCh2)
 		indexer2.SetReindexCh(reindexCh2)
+		indexer2.SetStartSyncDelay(0)
 		// Stop the original
 		select {
 		case <-g2.Indexer.Stop(ctx):
@@ -574,7 +576,7 @@ func TestChatSearchInbox(t *testing.T) {
 					1:      chat1.EmptyStruct{}, // tlf name
 					msgID1: chat1.EmptyStruct{},
 				},
-				Version: search.IndexVersion,
+				Version: search.IndexDataVersion,
 			},
 		}
 		verifyIndex(expectedIndex)
@@ -858,7 +860,8 @@ func TestChatSearchInbox(t *testing.T) {
 		// Verify POSTSEARCH_SYNC
 		ictx := globals.CtxAddIdentifyMode(ctx, keybase1.TLFIdentifyBehavior_CHAT_SKIP, nil)
 		g1.LocalChatDb.Nuke()
-		indexer1.SelectiveSync(ictx, uid1, true /* forceReindex */)
+		err = indexer1.SelectiveSync(ictx, uid1)
+		require.NoError(t, err)
 		opts.ReindexMode = chat1.ReIndexingMode_POSTSEARCH_SYNC
 		res = runSearch(query, opts, true /* expectedReindex*/)
 		require.Equal(t, 1, len(res.Hits))
@@ -901,5 +904,17 @@ func TestChatSearchInbox(t *testing.T) {
 		expectedIndex.Alias = map[string]map[string]chat1.EmptyStruct{}
 		expectedIndex.Metadata.SeenIDs[msgID9] = chat1.EmptyStruct{}
 		verifyIndex(expectedIndex)
+
+		// Test canceling sync loop
+		syncLoopCh := make(chan struct{})
+		indexer1.SetSyncLoopCh(syncLoopCh)
+		ctx, cancelFn := context.WithCancel(ctx)
+		go indexer1.SyncLoop(ctx, uid1)
+		cancelFn()
+		select {
+		case <-time.After(5 * time.Second):
+			require.Fail(t, "indexer SyncLoop never finished")
+		case <-syncLoopCh:
+		}
 	})
 }

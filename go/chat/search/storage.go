@@ -53,10 +53,45 @@ func newStore(g *globals.Context) *store {
 	}
 }
 
-func (s *store) dbKey(convID chat1.ConversationID, uid gregor1.UID) libkb.DbKey {
+// Get a storage key, on reads we try all version to purge old disk structures
+// so we don't error out on msg pack decode or strand indexes with ephemeral
+// content.
+func (s *store) dbKey(convID chat1.ConversationID, uid gregor1.UID, version indexDiskVersion) libkb.DbKey {
+	var key string
+	switch version {
+	case 1:
+		// original key
+		key = fmt.Sprintf("idx:%s:%s", convID, uid)
+	case 2:
+		// uid as a prefix makes more sense for leveldb to keep values
+		// co-located
+		key = fmt.Sprintf("idx:%s:%s", uid, convID)
+	case 3:
+		// changed to use chat1.ConversationIndexDisk to store arrays instead
+		// of maps.
+		key = fmt.Sprintf("idxd:%s:%s", uid, convID)
+	default:
+		panic("invalid index key version specified")
+	}
 	return libkb.DbKey{
 		Typ: libkb.DBChatIndex,
-		Key: fmt.Sprintf("idx:%s:%s", uid, convID),
+		Key: key,
+	}
+}
+
+// dbKeyLatest gives the most up to date version of the storage key, used for
+// all writes.
+func (s *store) dbKeyLatest(convID chat1.ConversationID, uid gregor1.UID) libkb.DbKey {
+	return s.dbKey(convID, uid, latestIndexDiskVersion)
+}
+
+// deleteOldVersionsLocked cleans up any old versions which may still exist
+func (s *store) deleteOldVersionsLocked(ctx context.Context, convID chat1.ConversationID, uid gregor1.UID) {
+	for version := indexDiskVersion(1); version < latestIndexDiskVersion; version++ {
+		s.Debug(ctx, "cleaning old version %d: for convID %v", version, convID)
+		if derr := s.deleteLocked(ctx, convID, uid, version); derr != nil {
+			s.Debug(ctx, "unable to delete version %d: %v", version, derr)
+		}
 	}
 }
 
@@ -73,21 +108,23 @@ func (s *store) getLocked(ctx context.Context, convID chat1.ConversationID, uid 
 			}
 		}
 		if err != nil {
-			if derr := s.deleteLocked(ctx, convID, uid); derr != nil {
+			if derr := s.deleteLocked(ctx, convID, uid, latestIndexDiskVersion); derr != nil {
 				s.Debug(ctx, "unable to delete: %v", derr)
 			}
 		}
 	}()
 
-	dbKey := s.dbKey(convID, uid)
+	dbKey := s.dbKeyLatest(convID, uid)
 	var entry chat1.ConversationIndexDisk
-	found, err := s.encryptedDB.Get(ctx, dbKey, &entry)
-	if err != nil || !found {
+	if found, err := s.encryptedDB.Get(ctx, dbKey, &entry); err != nil {
 		return nil, err
+	} else if !found {
+		s.deleteOldVersionsLocked(ctx, convID, uid)
+		return nil, nil
 	}
-	if entry.Metadata.Version != IndexVersion {
+	if entry.Metadata.Version != IndexDataVersion {
 		// drop the whole index for this conv
-		err = s.deleteLocked(ctx, convID, uid)
+		err = s.deleteLocked(ctx, convID, uid, latestIndexDiskVersion)
 		return nil, err
 	}
 
@@ -122,12 +159,12 @@ func (s *store) putLocked(ctx context.Context, convID chat1.ConversationID, uid 
 	if idx == nil {
 		return nil
 	}
-	dbKey := s.dbKey(convID, uid)
+	dbKey := s.dbKeyLatest(convID, uid)
 	entry := chat1.ConversationIndexDisk{
 		Index: make([]chat1.TokenTuple, len(idx.Index)),
 		Alias: make([]chat1.AliasTuple, len(idx.Alias)),
 		Metadata: chat1.ConversationIndexMetadataDisk{
-			Version: IndexVersion,
+			Version: IndexDataVersion,
 			SeenIDs: make([]chat1.MessageID, len(idx.Metadata.SeenIDs)),
 		},
 	}
@@ -164,8 +201,8 @@ func (s *store) putLocked(ctx context.Context, convID chat1.ConversationID, uid 
 	return s.encryptedDB.Put(ctx, dbKey, entry)
 }
 
-func (s *store) deleteLocked(ctx context.Context, convID chat1.ConversationID, uid gregor1.UID) error {
-	dbKey := s.dbKey(convID, uid)
+func (s *store) deleteLocked(ctx context.Context, convID chat1.ConversationID, uid gregor1.UID, version indexDiskVersion) error {
+	dbKey := s.dbKey(convID, uid, version)
 	return s.encryptedDB.Delete(ctx, dbKey)
 }
 
