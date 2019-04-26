@@ -1,7 +1,9 @@
 // @flow
-import Banner from './index'
+import * as React from 'react'
+import Banner, {height} from './index'
 import * as FsGen from '../../../actions/fs-gen'
 import {namedConnect} from '../../../util/container'
+import * as RowTypes from '../../row/types'
 
 type OwnProps = {||}
 
@@ -20,3 +22,12 @@ const ConnectedBanner = namedConnect<OwnProps, _, _, _, _>(
 )(Banner)
 
 export default ConnectedBanner
+
+export const asRows = (): Array<RowTypes.HeaderRowItem> => [
+  {
+    height: height,
+    key: 'reset-banner',
+    node: <ConnectedBanner />,
+    rowType: 'header',
+  },
+]
