@@ -115,16 +115,24 @@ const mergeProps = (stateProps, {onCancel, _onSent, _send, _selectChannel}, ownP
 
   // big team
 
-  const channels = stateProps._sendLinkToChat.channels.reduce(
-    (channels, channelname, convID) => [
-      ...channels,
-      {
-        channelname,
-        convID,
-      },
-    ],
-    []
-  )
+  const channels = stateProps._sendLinkToChat.channels
+    .reduce(
+      (channels, channelname, convID) => [
+        ...channels,
+        {
+          channelname,
+          convID,
+        },
+      ],
+      []
+    )
+    .sort(function(a, b) {
+      if (a.channelname < b.channelname) {
+        return -1
+      } else {
+        return 1
+      }
+    })
 
   return {
     conversation: {
