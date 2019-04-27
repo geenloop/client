@@ -110,6 +110,7 @@ func (idx *Indexer) SyncLoop(ctx context.Context, uid gregor1.UID) {
 	var l sync.Mutex
 	attemptSync := func(ctx context.Context) {
 		l.Lock()
+		defer l.Unlock()
 		if cancelFn == nil {
 			ctx, cancelFn = context.WithCancel(ctx)
 			go func() {
@@ -121,12 +122,21 @@ func (idx *Indexer) SyncLoop(ctx context.Context, uid gregor1.UID) {
 					}
 				}
 				l.Lock()
-				cancelFn()
-				cancelFn = nil
+				if cancelFn != nil {
+					cancelFn()
+					cancelFn = nil
+				}
 				l.Unlock()
 			}()
 		}
-		l.Unlock()
+	}
+	cancelSync := func() {
+		l.Lock()
+		defer l.Unlock()
+		if cancelFn != nil {
+			cancelFn()
+			cancelFn = nil
+		}
 	}
 	ticker := libkb.NewBgTicker(time.Hour)
 	after := time.After(idx.startSyncDelay)
@@ -142,16 +152,11 @@ func (idx *Indexer) SyncLoop(ctx context.Context, uid gregor1.UID) {
 			case keybase1.MobileAppState_FOREGROUND:
 			// if we enter any state besides foreground cancel any running syncs
 			default:
-				l.Lock()
-				if cancelFn != nil {
-					idx.Debug(ctx, "canceling sync, state %v", state)
-					cancelFn()
-					cancelFn = nil
-				}
-				l.Unlock()
+				cancelSync()
 			}
 		case <-stopCh:
 			idx.Debug(ctx, "stopping SelectiveSync bg loop")
+			cancelSync()
 			ticker.Stop()
 			return
 		}
